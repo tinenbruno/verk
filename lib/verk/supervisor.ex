@@ -16,17 +16,24 @@ defmodule Verk.Supervisor do
     Supervisor.start_link(__MODULE__, [], name: __MODULE__)
   end
 
+  defp generate_node_id do
+    <<part1::32, part2::32>> = :crypto.strong_rand_bytes(8)
+   "#{part1}#{part2}"
+  end
+
   @doc false
   def init(_) do
+    Application.put_env(:verk, :node_id, generate_node_id(), [:persistent])
     redis_url = Confex.get_env(:verk, :redis_url)
 
     redis            = worker(Redix, [redis_url, [name: Verk.Redis]], id: Verk.Redis)
     event_producer   = worker(Verk.EventProducer, [], id: Verk.EventProducer)
     queue_stats      = worker(Verk.QueueStats, [], id: Verk.QueueStats)
     schedule_manager = worker(Verk.ScheduleManager, [], id: Verk.ScheduleManager)
+    node_manager     = worker(Verk.NodeManager, [], id: Verk.NodeManager)
     manager_sup      = supervisor(Verk.Manager.Supervisor, [], id: Verk.Manager.Supervisor)
 
-    children = [redis, event_producer, queue_stats, schedule_manager, manager_sup]
+    children = [redis, node_manager, event_producer, queue_stats, schedule_manager, manager_sup]
     supervise(children, strategy: :one_for_one)
   end
 

@@ -16,7 +16,11 @@ defmodule Verk.Manager do
   @doc false
   def init(queues) do
     ets = :ets.new(@table, @ets_options)
-    for {queue, size} <- queues, do: :ets.insert_new(@table, {queue, size, :running})
+    node_id = Application.fetch_env!(:verk, :node_id)
+    for {queue, size} <- queues do
+      :ets.insert_new(@table, {queue, size, :running})
+      Redix.command!(Verk.Redis, ["SADD", "verk:node:#{node_id}:queues", queue])
+    end
     {:ok, ets}
   end
 
@@ -68,6 +72,8 @@ defmodule Verk.Manager do
     unless :ets.insert_new(@table, {queue, size, :running}) do
       Logger.error "Queue #{queue} is already running"
     end
+    node_id = Application.fetch_env!(:verk, :node_id)
+    Redix.command!(Verk.Redis, ["SADD", "verk:node:#{node_id}:queues", queue])
     Verk.Supervisor.start_child(queue, size)
   end
 
@@ -78,6 +84,8 @@ defmodule Verk.Manager do
   @spec remove(atom) :: :ok | {:error, :not_found}
   def remove(queue) do
     :ets.delete(@table, queue)
+    node_id = Application.fetch_env!(:verk, :node_id)
+    Redix.command!(Verk.Redis, ["SREM", "verk:node:#{node_id}:queues", queue])
     Verk.Supervisor.stop_child(queue)
   end
 end
